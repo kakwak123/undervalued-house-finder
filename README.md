@@ -81,6 +81,16 @@ undervalued-house-finder/
 └── README.md                       # This file
 ```
 
+### Current Structure (In Progress)
+
+```
+undervalued-house-finder/
+├── models/                         # Core data models ✅
+│   ├── src/models/                 # Model definitions
+│   ├── tests/                      # Model tests
+│   └── examples/                   # Usage examples
+```
+
 ### Future Structure (Planned)
 
 ```
@@ -89,12 +99,10 @@ undervalued-house-finder/
 │   ├── src/                        # API source code
 │   ├── tests/                      # API tests
 │   └── pyproject.toml              # API dependencies
-├── webapp/                         # React web application (to be added)
-│   ├── src/                        # React source code
-│   ├── public/                     # Static assets
-│   └── package.json                # Node dependencies
-└── shared/                         # Shared utilities (to be added)
-    └── models/                     # Shared data models
+└── webapp/                         # React web application (to be added)
+    ├── src/                        # React source code
+    ├── public/                     # Static assets
+    └── package.json                # Node dependencies
 ```
 
 ## 🚀 Getting Started
