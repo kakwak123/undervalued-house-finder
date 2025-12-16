@@ -31,8 +31,8 @@ async def run():
     #     json.dump(properties_data, file, indent=2, ensure_ascii=False)
 
     search_data = await realestate.scrape_search(
-        # Custom search: 3 bedrooms, 500m²+, $650k-$1M in eastern suburbs
-        url="https://www.realestate.com.au/buy/with-3-bedrooms-size-500-between-650000-1000000-in-dandenong+north,+vic+3175%3b+scoresby,+vic+3179%3b+rowville,+vic+3178%3b+wantirna,+vic+3152%3b+springvale,+vic+3171%3b+mulgrave,+vic+3170%3b+knox+city+-+region,+vic/list-1?source=refinement",
+        # Custom search: 3 bedrooms, 2 bathrooms, 500m²+, $650k-$1M in eastern suburbs
+        url="https://www.realestate.com.au/buy/with-3-bedrooms-size-500-between-650000-1000000-in-dandenong+north,+vic+3175%3b+scoresby,+vic+3179%3b+rowville,+vic+3178%3b+wantirna,+vic+3152%3b+springvale,+vic+3171%3b+mulgrave,+vic+3170%3b+knox+city+-+region,+vic/list-1?numBaths=2&source=refinement",
         max_scrape_pages=3,
     )
     with open(output.joinpath("search.json"), "w", encoding="utf-8") as file:

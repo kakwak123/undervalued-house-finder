@@ -7,8 +7,9 @@ from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 
-from .enums import ListingStatus, PropertyType
+from .enums import ListingStatus, PropertyType, EventType
 from .address import Address
+from .events import EventTimeline, Event
 
 
 class PriceHistory(BaseModel):
@@ -98,16 +99,30 @@ class Listing(BaseModel):
         """Ensure suburb matches address suburb."""
         return v.strip()
 
-    def add_price_record(self, price: Decimal, timestamp: Optional[datetime] = None) -> None:
+    def add_price_record(
+        self,
+        price: Decimal,
+        timestamp: Optional[datetime] = None,
+        event_timeline: Optional[EventTimeline] = None,
+    ) -> None:
         """
         Add a price record to history and update current/previous prices.
+
+        Automatically detects and logs PRICE_DROPPED events if price decreased.
 
         Args:
             price: The new price
             timestamp: When this price was recorded (defaults to now)
+            event_timeline: Optional EventTimeline to log events to
         """
         if timestamp is None:
             timestamp = datetime.utcnow()
+
+        # Detect price drop before updating
+        price_dropped = (
+            self.current_price is not None
+            and price < self.current_price
+        )
 
         # Update previous price if current price exists
         if self.current_price is not None:
@@ -124,24 +139,48 @@ class Listing(BaseModel):
         # Sort history by timestamp (most recent first)
         self.price_history.sort(key=lambda x: x.timestamp, reverse=True)
 
+        # Log PRICE_DROPPED event if detected
+        if price_dropped and event_timeline is not None:
+            price_drop_amount = self.previous_price - price
+            price_drop_percent = (price_drop_amount / self.previous_price) * 100
+            event_timeline.add_event(
+                event_type=EventType.PRICE_DROPPED,
+                listing_id=self.listing_id,
+                timestamp=timestamp,
+                metadata={
+                    "old_price": str(self.previous_price),
+                    "new_price": str(price),
+                    "drop_amount": str(price_drop_amount),
+                    "drop_percent": float(price_drop_percent),
+                },
+            )
+
     def add_auction_record(
         self,
         auction_datetime: datetime,
         status: ListingStatus,
         timestamp: Optional[datetime] = None,
         notes: Optional[str] = None,
+        event_timeline: Optional[EventTimeline] = None,
     ) -> None:
         """
         Add an auction record to history.
+
+        Automatically detects and logs auction events (CANCELLED, RESCHEDULED, VOIDED).
 
         Args:
             auction_datetime: Scheduled auction date and time
             status: Status of the auction
             timestamp: When this record was created (defaults to now)
             notes: Additional notes
+            event_timeline: Optional EventTimeline to log events to
         """
         if timestamp is None:
             timestamp = datetime.utcnow()
+
+        # Detect status changes for event logging
+        previous_status = self.status
+        previous_auction_datetime = self.auction_datetime
 
         # Update current auction datetime if this is the most recent scheduled auction
         if status == ListingStatus.SCHEDULED:
@@ -163,6 +202,47 @@ class Listing(BaseModel):
 
         # Sort history by timestamp (most recent first)
         self.auction_history.sort(key=lambda x: x.timestamp, reverse=True)
+
+        # Log events based on status changes
+        if event_timeline is not None:
+            if status == ListingStatus.CANCELLED:
+                event_timeline.add_event(
+                    event_type=EventType.AUCTION_CANCELLED,
+                    listing_id=self.listing_id,
+                    timestamp=timestamp,
+                    metadata={
+                        "previous_status": str(previous_status),
+                        "auction_datetime": auction_datetime.isoformat(),
+                        "notes": notes,
+                    },
+                )
+            elif status == ListingStatus.VOIDED:
+                event_timeline.add_event(
+                    event_type=EventType.AUCTION_VOIDED,
+                    listing_id=self.listing_id,
+                    timestamp=timestamp,
+                    metadata={
+                        "previous_status": str(previous_status),
+                        "auction_datetime": auction_datetime.isoformat(),
+                        "notes": notes,
+                    },
+                )
+            elif (
+                status == ListingStatus.SCHEDULED
+                and previous_auction_datetime is not None
+                and auction_datetime != previous_auction_datetime
+            ):
+                # Auction was rescheduled
+                event_timeline.add_event(
+                    event_type=EventType.AUCTION_RESCHEDULED,
+                    listing_id=self.listing_id,
+                    timestamp=timestamp,
+                    metadata={
+                        "old_auction_datetime": previous_auction_datetime.isoformat(),
+                        "new_auction_datetime": auction_datetime.isoformat(),
+                        "notes": notes,
+                    },
+                )
 
     class Config:
         """Pydantic configuration."""

@@ -62,3 +62,15 @@ class PropertyType(str, Enum):
         else:
             return cls.OTHER
 
+
+class EventType(str, Enum):
+    """Type of event that can occur for a listing."""
+
+    AUCTION_CANCELLED = "auction_cancelled"
+    AUCTION_RESCHEDULED = "auction_rescheduled"
+    AUCTION_VOIDED = "auction_voided"
+    PRICE_DROPPED = "price_dropped"
+
+    def __str__(self) -> str:
+        return self.value
+
