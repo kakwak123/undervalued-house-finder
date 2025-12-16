@@ -6,6 +6,30 @@ This document outlines the development milestones for the Undervalued House Find
 
 ---
 
+## Milestone 0 — Data Collection (Completed ✅)
+
+**Goal:** Collect property listing data from major Australian real estate websites.
+
+### Web Scrapers
+
+The project includes two production-ready web scrapers:
+
+- **realestate.com.au scraper** (`scaper/realestatecom-scraper/`)
+  - Scrapes property search results and individual property pages
+  - Extracts: property details, images, videos, floorplans, auction info, agent data
+  - Uses Scrapfly API for anti-scraping bypass
+  - Outputs structured JSON data
+
+- **domain.com.au scraper** (`scaper/domaincom-scraper/`)
+  - Scrapes property search results and individual property pages
+  - Extracts: property details, images, schools info, suburb insights, agent data
+  - Uses Scrapfly API for anti-scraping bypass
+  - Outputs structured JSON data
+
+Both scrapers are fully functional and can be used to collect property listing data for ingestion into the system.
+
+---
+
 ## Milestone 1 — MVP Foundations
 
 **Goal:** App can ingest listings, track auction/price events, and compare estimated vs real price.
@@ -56,15 +80,20 @@ This document outlines the development milestones for the Undervalued House Find
   - Events stored with timestamp + metadata
   - Events queryable per listing
 
-### Issue 4: Listing ingestion (CSV → DB)
+### Issue 4: Listing ingestion (JSON → DB)
 
 - **Type:** Feature
 - **Description:**
-  Ingest sample property listings from CSV.
+  Ingest property listings from scraper JSON output.
+  
+  **Input Sources:**
+  - Scraper JSON files (realestate.com.au, domain.com.au)
+  - Test data from `testdata/search.json`
 - **Acceptance Criteria:**
   - Idempotent ingestion
   - Detect price/status changes
   - Generate events automatically
+  - Support both scraper formats
 
 ---
 
@@ -165,9 +194,9 @@ This document outlines the development milestones for the Undervalued House Find
 
 ---
 
-## Milestone 4 — User-Facing Experience
+## Milestone 4 — Backend API
 
-**Goal:** Clear, explainable insights and usable UI.
+**Goal:** Expose data and insights via REST API.
 
 ### Issue 12: Opportunity summary API
 
@@ -183,39 +212,175 @@ This document outlines the development milestones for the Undervalued House Find
 - **Acceptance Criteria:**
   - Fast response
   - Clear JSON structure
+  - RESTful endpoints
 
-### Issue 13: Listing detail timeline view
+### Issue 13: Listing detail API
 
 - **Type:** Feature
 - **Description:**
-  Show chronological events for a listing.
+  Expose detailed listing information with timeline.
+  
+  **Returns:**
+  - Full listing details
+  - Chronological events
+  - Price history
+  - Auction timeline
 - **Acceptance Criteria:**
-  - Correct ordering
-  - Human-readable descriptions
+  - Correct event ordering
+  - Human-readable event descriptions
+  - Complete listing metadata
 
-### Issue 14: Filters & alerts (MVP)
+### Issue 14: Filters & search API
 
 - **Type:** Feature
 - **Description:**
-  Filter listings by undervaluation threshold.
+  Filter and search listings via API.
+  
+  **Filters:**
+  - Undervaluation threshold
+  - Suburb
+  - Property type
+  - Price range
+  - Active signals
 - **Acceptance Criteria:**
   - Threshold configurable
   - Filter applied server-side
+  - Pagination support
+
+---
+
+## Milestone 5 — React Web Application
+
+**Goal:** Modern, responsive web interface for browsing and analyzing undervalued properties.
+
+### Issue 15: React app setup & project structure
+
+- **Type:** Chore
+- **Description:**
+  Initialize React application with modern tooling.
+  
+  **Tech Stack:**
+  - React 18+
+  - TypeScript
+  - Vite (or Create React App)
+  - React Router
+  - State management (Zustand/Redux)
+- **Acceptance Criteria:**
+  - App builds and runs locally
+  - Clear component structure
+  - Routing configured
+
+### Issue 16: Opportunity listing page
+
+- **Type:** Feature
+- **Description:**
+  Display ranked list of undervalued properties.
+  
+  **Features:**
+  - Sortable table/list view
+  - Property cards with key metrics
+  - Undervaluation percentage display
+  - Score visualization
+  - Quick filters (suburb, type, threshold)
+- **Acceptance Criteria:**
+  - Responsive design
+  - Fast loading
+  - Clear visual hierarchy
+
+### Issue 17: Property detail page
+
+- **Type:** Feature
+- **Description:**
+  Show comprehensive property details and timeline.
+  
+  **Features:**
+  - Property information display
+  - Image gallery
+  - Price vs estimated comparison chart
+  - Event timeline visualization
+  - Active signals display
+  - Score breakdown
+- **Acceptance Criteria:**
+  - All data displayed clearly
+  - Timeline chronologically ordered
+  - Mobile-friendly
+
+### Issue 18: Filters & search UI
+
+- **Type:** Feature
+- **Description:**
+  Interactive filtering and search interface.
+  
+  **Features:**
+  - Filter sidebar/panel
+  - Undervaluation threshold slider
+  - Suburb autocomplete
+  - Property type checkboxes
+  - Price range inputs
+  - Signal filters
+  - URL-based filter state
+- **Acceptance Criteria:**
+  - Filters update results in real-time
+  - Filter state persists in URL
+  - Clear visual feedback
+
+### Issue 19: Dashboard & analytics view
+
+- **Type:** Feature
+- **Description:**
+  Overview dashboard with key metrics.
+  
+  **Features:**
+  - Total opportunities count
+  - Average undervaluation %
+  - Top suburbs by opportunity
+  - Signal distribution charts
+  - Recent price drops
+- **Acceptance Criteria:**
+  - Real-time data updates
+  - Clear visualizations
+  - Responsive layout
+
+### Issue 20: Responsive design & polish
+
+- **Type:** Feature
+- **Description:**
+  Ensure excellent UX across all devices.
+  
+  **Features:**
+  - Mobile-first responsive design
+  - Loading states
+  - Error handling
+  - Accessibility (WCAG compliance)
+  - Performance optimization
+- **Acceptance Criteria:**
+  - Works on mobile, tablet, desktop
+  - Fast page loads
+  - Accessible to screen readers
+  - Smooth interactions
 
 ---
 
 ## 🧩 Optional Stretch Milestones (Later)
 
-### Milestone 5 — Smarter Valuations
+### Milestone 6 — Smarter Valuations
 
 - Comparable sales model
 - Confidence score
 - Suburb trend adjustment
 
-### Milestone 6 — Notifications
+### Milestone 7 — Notifications
 
 - Watchlist
 - Email / push alerts on price drop or auction failure
+
+### Milestone 8 — Advanced Web Features
+
+- User accounts & saved searches
+- Property comparison tool
+- Export to CSV/PDF
+- Map view with property markers
+- Advanced analytics & charts
 
 ---
 
@@ -228,6 +393,10 @@ Create the following labels in GitHub:
 - `signal`
 - `valuation`
 - `auction`
+- `frontend`
+- `backend`
+- `api`
+- `scraper`
 - `priority-high`
 
 
