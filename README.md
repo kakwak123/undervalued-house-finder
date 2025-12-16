@@ -50,15 +50,51 @@ See [docs/milestones.md](./docs/milestones.md) for the complete development road
 
 ```
 undervalued-house-finder/
-├── docs/                    # Project documentation
-│   ├── README.md           # Documentation index
-│   └── milestones.md       # Development milestones and issues
-├── scaper/                 # Web scraping modules
-│   ├── realestatecom-scraper/  # realestate.com.au scraper
-│   └── domaincom-scraper/      # domain.com.au scraper
-├── testdata/               # Test data files
-│   └── search.json         # Sample property listings
-└── README.md               # This file
+├── docs/                           # Project documentation
+│   ├── README.md                   # Documentation index
+│   └── milestones.md               # Development milestones and issues
+├── scaper/                         # Web scraping modules
+│   ├── realestatecom-scraper/      # realestate.com.au scraper
+│   │   ├── realestate.py           # Scraper implementation
+│   │   ├── run.py                  # Scraper runner
+│   │   ├── test.py                 # Scraper tests
+│   │   ├── pyproject.toml          # Poetry dependencies
+│   │   ├── README.md               # Scraper documentation
+│   │   └── results/                # Scraper output (gitignored)
+│   │       ├── search.json
+│   │       └── properties.json
+│   ├── domaincom-scraper/          # domain.com.au scraper
+│   │   ├── domaincom.py            # Scraper implementation
+│   │   ├── run.py                  # Scraper runner
+│   │   ├── test.py                 # Scraper tests
+│   │   ├── pyproject.toml          # Poetry dependencies
+│   │   ├── README.md               # Scraper documentation
+│   │   └── results/                # Scraper output (gitignored)
+│   │       ├── search.json
+│   │       └── properties.json
+│   └── EXTRACTED_FIELDS.md         # Field extraction documentation
+├── testdata/                       # Test data files
+│   └── search.json                 # Sample property listings for testing
+├── .gitignore                      # Git ignore rules
+├── Makefile                        # Build and development commands
+├── pyproject.toml                  # Root-level Poetry config (linting/formatting)
+└── README.md                       # This file
+```
+
+### Future Structure (Planned)
+
+```
+undervalued-house-finder/
+├── api/                            # Backend API (to be added)
+│   ├── src/                        # API source code
+│   ├── tests/                      # API tests
+│   └── pyproject.toml              # API dependencies
+├── webapp/                         # React web application (to be added)
+│   ├── src/                        # React source code
+│   ├── public/                     # Static assets
+│   └── package.json                # Node dependencies
+└── shared/                         # Shared utilities (to be added)
+    └── models/                     # Shared data models
 ```
 
 ## 🚀 Getting Started
@@ -67,6 +103,7 @@ undervalued-house-finder/
 
 - Python 3.10+
 - Poetry (for dependency management)
+- Git
 
 ### Setup
 
@@ -76,12 +113,17 @@ undervalued-house-finder/
    cd undervalued-house-finder
    ```
 
-2. **Install root-level dependencies** (for linting/formatting tools)
+2. **Verify setup** (optional but recommended)
+   ```bash
+   bash scripts/verify-setup.sh
+   ```
+
+3. **Install root-level dependencies** (for linting/formatting tools)
    ```bash
    poetry install --no-root
    ```
 
-3. **Install dependencies** (for each scraper module)
+4. **Install dependencies** (for each scraper module)
    ```bash
    cd scaper/realestatecom-scraper
    poetry install
@@ -90,13 +132,11 @@ undervalued-house-finder/
    poetry install
    ```
 
-4. **Run linting/formatting**
+5. **Verify build**
    ```bash
-   # Format code
-   make format
-   
-   # Lint code
-   make lint
+   cd ../..
+   make help        # View available commands
+   make clean       # Clean build artifacts
    ```
 
 ## 🛠️ Development
@@ -127,5 +167,5 @@ make test
 
 ## 🤝 Contributing
 
-[Add contribution guidelines here]
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on contributing to this project.
 
