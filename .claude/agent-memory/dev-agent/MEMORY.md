@@ -1,0 +1,3 @@
+- [Project Architecture & Package Boundaries](project_architecture.md) — monorepo package isolation rules, sys.path cross-package import pattern, where each layer lives
+- [Scraper Implementation Patterns](scraper_patterns.md) — RateLimiter/retry_on_failure conventions, sequential pagination decision, test file locations
+- [Valuation Engine (M2-1/M2-2/M2-3)](valuation_engine.md) — PriceModel/ValuationResult/UndervaluationDetector in models/, JSON seed file pattern, threshold boundaries

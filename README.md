@@ -1,179 +1,137 @@
-# 🏠 Undervalued House Finder
+# Undervalued House Finder
 
-A comprehensive system for identifying and tracking undervalued property listings by analyzing price signals, auction events, and valuation comparisons.
+A system for identifying undervalued Melbourne properties by combining ML price modelling, auction signal tracking, and multi-source data scraping.
 
-## 📋 Scope
+## Project Goal
 
-This project is a monorepo that combines:
+Find properties priced below their estimated fair market value by:
 
-1. **Data Collection** - Web scrapers for property listings (realestate.com.au, domain.com.au)
-2. **Data Processing** - Ingestion, normalization, and event tracking system
-3. **Valuation Engine** - Estimated price calculation and undervaluation detection
-4. **Signal Intelligence** - Auction cancellation, price drops, and seller motivation signals
-5. **Opportunity Ranking** - Scoring system to identify the best investment opportunities
+- Building a regression/gradient-boosting model to predict expected prices
+- Tracking failed auctions and properties with price reductions
+- Scraping data from Domain and REA consistently over time
+- Displaying everything in a clean, filterable web dashboard
 
-### Core Capabilities
+## Undervalue Score
 
-- **Listing Ingestion**: Import property listings from scraped data
-- **Event Tracking**: Monitor auction cancellations, reschedules, price changes
-- **Price Comparison**: Compare estimated vs. listing prices
-- **Undervaluation Detection**: Identify properties priced below market value
-- **Signal Analysis**: Detect weak demand and seller motivation indicators
-- **Opportunity Scoring**: Rank listings by investment potential
+```
+(Predicted Price - Listed Price) / Predicted Price × 100
+```
 
-## 🗺️ Roadmap
+- Score > 10% → potentially undervalued
+- Score > 20% → significantly undervalued
+- Score < 0% → overpriced relative to model
 
-See [docs/milestones.md](./docs/milestones.md) for the complete development roadmap.
+## Roadmap
 
-### Milestone 1 — MVP Foundations ✅ (In Progress)
-- Repository setup and project structure
-- Core listing data model
-- Event timeline system
-- Listing ingestion pipeline
+See [docs/milestones.md](./docs/milestones.md) for the full roadmap.
+
+### Milestone 1 — MVP Foundations (In Progress)
+
+- [x] Repository setup and project structure
+- [x] Core listing data model
+- [x] Event timeline system
+- [x] Listing ingestion pipeline
 
 ### Milestone 2 — Valuation & Undervaluation Engine
-- Baseline estimated price model
-- Price comparison and classification
-- Undervaluation threshold detection
+
+- [ ] Baseline estimated price model
+- [ ] Price comparison and classification
+- [ ] Undervaluation threshold detection
 
 ### Milestone 3 — Auction & Price Signal Intelligence
-- Auction cancellation/rescheduling handling
-- Compound signal detection (voided auction + price drop)
-- Opportunity scoring engine
+
+- [ ] Auction cancellation/rescheduling handling
+- [ ] Compound signal detection (voided auction + price drop)
+- [ ] Opportunity scoring engine
 
 ### Milestone 4 — User-Facing Experience
-- Opportunity summary API
-- Listing detail timeline view
-- Filters and alerts
 
-## 📁 Project Structure
+- [ ] Opportunity summary API
+- [ ] Listing detail timeline view
+- [ ] Filters and alerts
 
-```
-undervalued-house-finder/
-├── docs/                           # Project documentation
-│   ├── README.md                   # Documentation index
-│   └── milestones.md               # Development milestones and issues
-├── scaper/                         # Web scraping modules
-│   ├── realestatecom-scraper/      # realestate.com.au scraper
-│   │   ├── realestate.py           # Scraper implementation
-│   │   ├── run.py                  # Scraper runner
-│   │   ├── test.py                 # Scraper tests
-│   │   ├── pyproject.toml          # Poetry dependencies
-│   │   ├── README.md               # Scraper documentation
-│   │   └── results/                # Scraper output (gitignored)
-│   │       ├── search.json
-│   │       └── properties.json
-│   ├── domaincom-scraper/          # domain.com.au scraper
-│   │   ├── domaincom.py            # Scraper implementation
-│   │   ├── run.py                  # Scraper runner
-│   │   ├── test.py                 # Scraper tests
-│   │   ├── pyproject.toml          # Poetry dependencies
-│   │   ├── README.md               # Scraper documentation
-│   │   └── results/                # Scraper output (gitignored)
-│   │       ├── search.json
-│   │       └── properties.json
-│   └── EXTRACTED_FIELDS.md         # Field extraction documentation
-├── testdata/                       # Test data files
-│   └── search.json                 # Sample property listings for testing
-├── .gitignore                      # Git ignore rules
-├── Makefile                        # Build and development commands
-├── pyproject.toml                  # Root-level Poetry config (linting/formatting)
-└── README.md                       # This file
-```
+## Tech Stack
 
-### Current Structure (In Progress)
+| Layer        | Technology                                                    |
+| ------------ | ------------------------------------------------------------- |
+| Data models  | Python + Pydantic v2                                          |
+| Scraping     | Python (httpx + BeautifulSoup, Playwright for JS-heavy pages) |
+| Data storage | Supabase (PostgreSQL)                                         |
+| ML model     | scikit-learn → XGBoost / LightGBM                             |
+| Backend API  | FastAPI                                                       |
+| Frontend     | React + Tailwind CSS + Recharts                               |
+| Scheduling   | APScheduler                                                   |
+
+## Data Sources
+
+| Source            | Data                                     | Method           |
+| ----------------- | ---------------------------------------- | ---------------- |
+| RealEstate.com.au | Listings, sold data, price drops         | Scraper          |
+| Domain.com.au     | Listings, price history, auction results | Scraper          |
+| REIV              | Auction clearance rates                  | Manual / scraper |
+| ABS / data.gov.au | Suburb demographics, transport           | Public API       |
+
+## Project Structure
 
 ```
 undervalued-house-finder/
-├── models/                         # Core data models ✅
-│   ├── src/models/                 # Model definitions
-│   ├── tests/                      # Model tests
-│   └── examples/                   # Usage examples
+├── models/                         # Core data models (Pydantic)
+│   ├── src/models/                 # Listing, Address, Event, enums, normalizers
+│   ├── tests/
+│   └── examples/
+├── ingestion/                      # Scraper JSON → Supabase pipeline
+│   ├── src/ingestion/              # Ingester, SupabaseRepository, readers
+│   └── supabase_schema.sql
+├── scaper/                         # Web scrapers
+│   ├── realestatecom-scraper/
+│   └── domaincom-scraper/
+├── testdata/                       # Sample property listings for testing
+├── docs/                           # Milestones and documentation
+├── Makefile                        # Format, lint, test commands
+└── pyproject.toml                  # Root-level black/ruff config
 ```
 
-### Future Structure (Planned)
+Planned additions: `api/` (FastAPI), `webapp/` (React), `model/` (ML pipeline), `notebooks/` (EDA).
 
-```
-undervalued-house-finder/
-├── api/                            # Backend API (to be added)
-│   ├── src/                        # API source code
-│   ├── tests/                      # API tests
-│   └── pyproject.toml              # API dependencies
-└── webapp/                         # React web application (to be added)
-    ├── src/                        # React source code
-    ├── public/                     # Static assets
-    └── package.json                # Node dependencies
-```
+## Getting Started
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.10+
-- Poetry (for dependency management)
-- Git
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd undervalued-house-finder
-   ```
-
-2. **Verify setup** (optional but recommended)
-   ```bash
-   bash scripts/verify-setup.sh
-   ```
-
-3. **Install root-level dependencies** (for linting/formatting tools)
-   ```bash
-   poetry install --no-root
-   ```
-
-4. **Install dependencies** (for each scraper module)
-   ```bash
-   cd scaper/realestatecom-scraper
-   poetry install
-   
-   cd ../domaincom-scraper
-   poetry install
-   ```
-
-5. **Verify build**
-   ```bash
-   cd ../..
-   make help        # View available commands
-   make clean       # Clean build artifacts
-   ```
-
-## 🛠️ Development
-
-### Code Quality
-
-This project uses:
-- **Black** - Code formatting (line length: 120)
-- **Ruff** - Fast Python linter
-- **Poetry** - Dependency management
-
-### Building Locally
+**Prerequisites:** Python 3.10+, Poetry, Git
 
 ```bash
-# Format all code
-make format
+git clone <repository-url>
+cd undervalued-house-finder
 
-# Lint all code
-make lint
+# Install root-level dev tools (black, ruff)
+poetry install --no-root
 
-# Run tests (when available)
-make test
+# Install per-package dependencies
+cd models && poetry install && cd ..
+cd ingestion && poetry install && cd ..
+cd scaper/realestatecom-scraper && poetry install && cd ../..
+cd scaper/domaincom-scraper && poetry install && cd ../..
+
+# Verify
+bash scripts/verify-setup.sh
+make help
 ```
 
-## 📝 License
+## Development
 
-[Add your license here]
+```bash
+make format   # black (line-length 120)
+make lint     # ruff
+make test     # run tests
 
-## 🤝 Contributing
+# Run model tests directly
+cd models && poetry run pytest tests/
+```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on contributing to this project.
+## Legal & Ethical Notes
 
+- Scrapers must respect `robots.txt` and rate-limit requests (minimum 2s delay)
+- Data is for personal/research use only — do not republish scraped data commercially
+- Use official APIs where available
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
