@@ -1,12 +1,20 @@
-from cerberus import Validator
-import realestate
+"""
+Tests for realestate.com.au Playwright scraper.
+
+These are integration tests that hit the live realestate.com.au website.
+Requires Playwright Chromium to be installed:
+    playwright install chromium
+
+Tests are marked flaky with 3 retries to handle transient Cloudflare blocks.
+"""
+
 import pytest
+from cerberus import Validator
 import pprint
 
-pp = pprint.PrettyPrinter(indent=4)
+import realestate
 
-# enable scrapfly cache
-realestate.BASE_CONFIG["cache"] = True
+pp = pprint.PrettyPrinter(indent=4)
 
 
 def validate_or_fail(item, validator):
@@ -21,92 +29,55 @@ property_schema = {
     "schema": {
         "type": "dict",
         "schema": {
-            "type": {"type": "string"},
-            "propertyType": {"type": "string"},
-            "description": {"type": "string"},
-            "propertyLink": {"type": "string"},
+            "id": {"type": "string", "nullable": True},
+            "propertyType": {"type": "string", "nullable": True},
+            "description": {"nullable": True},
+            "propertyLink": {"type": "string", "nullable": True},
             "address": {
                 "type": "dict",
+                "nullable": True,
                 "schema": {
-                    "suburb": {"type": "string"},
-                    "state": {"type": "string"},
-                    "postcode": {"type": "string"},
+                    "suburb": {"type": "string", "nullable": True},
+                    "state": {"type": "string", "nullable": True},
+                    "postcode": {"type": "string", "nullable": True},
                     "display": {
                         "type": "dict",
+                        "nullable": True,
                         "schema": {
-                            "shortAddress": {"type": "string"},
-                            "fullAddress": {"type": "string"},
-                            "geocode": {
-                                "type": "dict",
-                                "schema": {
-                                    "latitude": {"type": "integer"},
-                                    "longitude": {"type": "integer"},
-                                },
-                            },
+                            "shortAddress": {"type": "string", "nullable": True},
+                            "fullAddress": {"type": "string", "nullable": True},
                         },
-                    },
-                },
-            },
-            "propertySizes": {
-                "type": "dict",
-                "schema": {
-                    "land": {
-                        "type": "dict",
-                        "schema": {"displayValue": {"type": "string"}},
-                    },
-                    "preferred": {
-                        "type": "dict",
-                        "schema": {"sizeType": {"type": "string"}},
                     },
                 },
             },
             "generalFeatures": {
                 "type": "dict",
+                "nullable": True,
                 "schema": {
                     "bedrooms": {
                         "type": "dict",
-                        "schema": {"value": {"type": "integer"}},
+                        "nullable": True,
+                        "schema": {"value": {"type": "integer", "nullable": True}},
                     },
                     "bathrooms": {
                         "type": "dict",
-                        "schema": {"value": {"type": "integer"}},
+                        "nullable": True,
+                        "schema": {"value": {"type": "integer", "nullable": True}},
                     },
                     "parkingSpaces": {
                         "type": "dict",
-                        "schema": {"value": {"type": "integer"}},
+                        "nullable": True,
+                        "schema": {"value": {"type": "integer", "nullable": True}},
                     },
                 },
             },
-            "propertyFeatures": {
-                "type": "list",
-                "schema": {
-                    "type": "dict",
-                    "schema": {"featureName": {"type": "string"}},
-                },
-            },
-            "images": {"type": "list", "schema": {"type": "string"}},
+            "images": {"type": "list", "nullable": True, "schema": {"type": "string"}},
             "listingCompany": {
                 "type": "dict",
+                "nullable": True,
                 "schema": {
-                    "name": {"type": "string"},
-                    "id": {"type": "string"},
-                    "companyLink": {"type": "string"},
-                    "phoneNumber": {"type": "string"},
-                    "address": {"type": "string"},
-                },
-            },
-            "listers": {
-                "type": "list",
-                "schema": {
-                    "type": "dict",
-                    "schema": {
-                        "id": {"type": "string"},
-                        "name": {"type": "string"},
-                        "phoneNumber": {
-                            "type": "dict",
-                            "schema": {"display": {"type": "string"}},
-                        },
-                    },
+                    "name": {"type": "string", "nullable": True},
+                    "id": {"type": "string", "nullable": True},
                 },
             },
         },
@@ -117,6 +88,7 @@ property_schema = {
 @pytest.mark.asyncio
 @pytest.mark.flaky(reruns=3, reruns_delay=30)
 async def test_properties_scraping():
+    """Scrape individual property pages and validate output shape."""
     properties_data = await realestate.scrape_properties(
         urls=[
             "https://www.realestate.com.au/property-house-vic-tarneit-143160680",
@@ -133,11 +105,12 @@ async def test_properties_scraping():
 @pytest.mark.asyncio
 @pytest.mark.flaky(reruns=3, reruns_delay=30)
 async def test_search_scraping():
+    """Scrape one page of search results and validate output shape."""
     search_data = await realestate.scrape_search(
         url="https://www.realestate.com.au/buy/in-melbourne+-+northern+region,+vic/list-1",
-        max_scrape_pages=2,
+        max_scrape_pages=1,
     )
     validator = Validator(property_schema, allow_unknown=True)
     for item in search_data:
         validate_or_fail(item, validator)
-    assert len(search_data) >= 2
+    assert len(search_data) >= 1

@@ -1,43 +1,44 @@
 """
-This example run script shows how to run the realestate.com.au scraper defined in ./realestate.py
-It scrapes ads data and saves it to ./results/
+Entry point for the realestate.com.au Playwright scraper.
 
-To run this script set the env variable $SCRAPFLY_KEY with your scrapfly API key:
-$ export $SCRAPFLY_KEY="your key from https://scrapfly.io/dashboard"
+Uses Playwright + playwright-stealth to bypass Cloudflare protection.
+No paid proxy service or API key required.
+
+NOTE: After installing dependencies, run once to download the browser:
+    playwright install chromium
+
+Optional env vars:
+    REALESTATE_SEARCH_URL   — full search URL (default: Melbourne buy listings)
+    REALESTATE_MAX_PAGES    — maximum pages to scrape (default: 3)
+
+Usage:
+    poetry install
+    playwright install chromium
+    poetry run python run.py
 """
+
 import asyncio
 import json
-import realestate
 from pathlib import Path
+
+from realestate import scrape_search, _get_search_url, _get_max_pages
 
 output = Path(__file__).parent / "results"
 output.mkdir(exist_ok=True)
 
-
-async def run():
-    # enable scrapfly cache for basic use
-    realestate.BASE_CONFIG["cache"] = True
-
-    print("running Realestate.com.au scrape and saving results to ./results directory")
-
-    # properties_data = await realestate.scrape_properties(
-    #     urls=[
-    #         "https://www.realestate.com.au/property-house-vic-tarneit-143160680",
-    #         "https://www.realestate.com.au/property-house-vic-bundoora-141557712",
-    #         "https://www.realestate.com.au/property-townhouse-vic-glenroy-143556608",
-    #     ]
-    # )
-    # with open(output.joinpath("properties.json"), "w", encoding="utf-8") as file:
-    #     json.dump(properties_data, file, indent=2, ensure_ascii=False)
-
-    search_data = await realestate.scrape_search(
-        # Custom search: 3 bedrooms, 2 bathrooms, 500m²+, $650k-$1M in eastern suburbs
-        url="https://www.realestate.com.au/buy/with-3-bedrooms-size-500-between-650000-1000000-in-dandenong+north,+vic+3175%3b+scoresby,+vic+3179%3b+rowville,+vic+3178%3b+wantirna,+vic+3152%3b+springvale,+vic+3171%3b+mulgrave,+vic+3170%3b+knox+city+-+region,+vic/list-1?numBaths=2&source=refinement",
-        max_scrape_pages=3,
-    )
-    with open(output.joinpath("search.json"), "w", encoding="utf-8") as file:
-        json.dump(search_data, file, indent=2, ensure_ascii=False)
+SEARCH_URL = _get_search_url()
+MAX_PAGES = _get_max_pages()
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    print(f"Running realestate.com.au Playwright scrape")
+    print(f"Search URL: {SEARCH_URL}")
+    print(f"Max pages: {MAX_PAGES}")
+    print("Saving results to ./results/search.json")
+
+    search_data = asyncio.run(scrape_search(url=SEARCH_URL, max_scrape_pages=MAX_PAGES))
+
+    out_path = output / "search.json"
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(search_data, fh, indent=2, ensure_ascii=False)
+    print(f"Written {len(search_data)} listings to {out_path}")
