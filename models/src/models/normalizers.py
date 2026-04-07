@@ -5,9 +5,11 @@ This module provides functions to convert raw scraper JSON data
 into standardized Listing models.
 """
 
-from typing import Dict, Optional, Any
+import html
+import re
 from datetime import datetime
 from decimal import Decimal
+from typing import Dict, Optional, Any
 
 from .listing import Listing
 from .address import Address
@@ -45,16 +47,25 @@ def normalize_realestate_data(data: Dict[str, Any]) -> Listing:
         land_value = property_sizes["land"].get("displayValue")
         if land_value:
             try:
-                land_size = Decimal(str(land_value))
-            except (ValueError, TypeError):
+                # Remove any non-numeric characters except decimal point
+                # Handle cases like "554", "554.5", "554 m²", etc.
+                cleaned_value = str(land_value).strip()
+                match = re.search(r"[\d.]+", cleaned_value)
+                if match:
+                    land_size = Decimal(match.group())
+            except (ValueError, TypeError, Exception):
                 pass
-    
+
     if property_sizes.get("building"):
         building_value = property_sizes["building"].get("displayValue")
         if building_value:
             try:
-                building_size = Decimal(str(building_value))
-            except (ValueError, TypeError):
+                # Remove any non-numeric characters except decimal point
+                cleaned_value = str(building_value).strip()
+                match = re.search(r"[\d.]+", cleaned_value)
+                if match:
+                    building_size = Decimal(match.group())
+            except (ValueError, TypeError, Exception):
                 pass
 
     # Extract general features
@@ -77,6 +88,53 @@ def normalize_realestate_data(data: Dict[str, Any]) -> Listing:
         status = ListingStatus.SCHEDULED
         # auction_datetime would need to be parsed from auction_data
 
+    # Extract price from description or propertyFeatures
+    current_price = None
+    description = data.get("description", "")
+    
+    # Try to extract price from description (common patterns)
+    if description:
+        # Remove HTML tags and decode entities
+        clean_desc = re.sub(r"<[^>]+>", " ", description)
+        clean_desc = html.unescape(clean_desc)
+        
+        # Look for price patterns like "$760,000", "$760,000 - $820,000", "PRICE GUIDE $760,000"
+        # Match dollar amounts with commas: $760,000 or $760000
+        price_pattern = r'\$[\d,]+(?:\.[\d]+)?'
+        matches = re.findall(price_pattern, clean_desc)
+        
+        if matches:
+            # Take the first price found (or lower value if range)
+            price_str = matches[0].replace('$', '').replace(',', '')
+            try:
+                price_value = float(price_str)
+                # Only accept reasonable property prices (between 10k and 100M)
+                if 10000 <= price_value <= 100000000:
+                    current_price = Decimal(str(int(price_value)))
+            except (ValueError, TypeError):
+                pass
+    
+    # Also check propertyFeatures for price information
+    property_features = data.get("propertyFeatures", [])
+    if property_features and current_price is None:
+        for feature in property_features:
+            feature_name = str(feature.get("featureName", "")).lower()
+            if "price" in feature_name or "cost" in feature_name:
+                value = feature.get("value")
+                if value:
+                    try:
+                        # Try to extract numeric value
+                        if isinstance(value, (int, float)):
+                            current_price = Decimal(str(int(value)))
+                        elif isinstance(value, str):
+                            price_str = re.sub(r'[^\d.]', '', value)
+                            if price_str:
+                                current_price = Decimal(str(int(float(price_str))))
+                    except (ValueError, TypeError):
+                        continue
+                if current_price:
+                    break
+
     # Create listing
     listing = Listing(
         listing_id=str(data.get("id", "")),
@@ -88,9 +146,10 @@ def normalize_realestate_data(data: Dict[str, Any]) -> Listing:
         land_size=land_size,
         building_size=building_size,
         status=status,
+        current_price=current_price,
         auction_datetime=auction_datetime,
         property_link=data.get("propertyLink"),
-        description=data.get("description"),
+        description=description,
         source="realestate.com.au",
     )
 

@@ -70,6 +70,20 @@ class EventType(str, Enum):
     AUCTION_RESCHEDULED = "auction_rescheduled"
     AUCTION_VOIDED = "auction_voided"
     PRICE_DROPPED = "price_dropped"
+    UNDERVALUED_THRESHOLD_CROSSED = "undervalued_threshold_crossed"
+    DISTRESS_SIGNAL = "distress_signal"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class ValuationClassification(str, Enum):
+    """Classification of a listing's valuation relative to estimated price."""
+
+    SIGNIFICANTLY_UNDERVALUED = "significantly_undervalued"  # > 20 % below estimated
+    UNDERVALUED = "undervalued"  # 10–20 % below estimated
+    FAIR_VALUE = "fair_value"  # within ±10 % of estimated
+    OVERPRICED = "overpriced"  # > 10 % above estimated
 
     def __str__(self) -> str:
         return self.value

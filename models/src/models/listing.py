@@ -7,7 +7,7 @@ from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 
-from .enums import ListingStatus, PropertyType, EventType
+from .enums import ListingStatus, PropertyType, EventType, ValuationClassification
 from .address import Address
 from .events import EventTimeline, Event
 
@@ -84,6 +84,22 @@ class Listing(BaseModel):
     auction_history: List[AuctionHistory] = Field(
         default_factory=list,
         description="Historical auction records",
+    )
+
+    # Valuation fields (populated by models/valuation.py)
+    estimated_price: Optional[Decimal] = Field(None, ge=0, description="Model-estimated property value")
+    undervalue_score: Optional[float] = Field(
+        None,
+        description="(estimated - listed) / estimated × 100. Positive = undervalued.",
+    )
+    valuation_classification: Optional[ValuationClassification] = Field(
+        None, description="Human-readable valuation band"
+    )
+
+    # Distress signal flag (M3-3)
+    distress_signal: bool = Field(
+        default=False,
+        description="True when listing has both AUCTION_VOIDED and PRICE_DROPPED within the distress window",
     )
 
     # Additional metadata
