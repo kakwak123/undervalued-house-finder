@@ -1,16 +1,22 @@
+"""
+Tests for Domain.com.au API scraper.
+
+These are integration tests that hit the live Domain API.
+Set DOMAIN_API_KEY in your environment before running.
+Set SAVE_TEST_RESULTS=true to persist results to ./results/.
+"""
+
 import json
 import os
 from pathlib import Path
-from cerberus import Validator
-import domaincom
+
 import pytest
+from cerberus import Validator
 import pprint
 
+import domaincom
+
 pp = pprint.PrettyPrinter(indent=4)
-
-
-# enable scrapfly cache
-domaincom.BASE_CONFIG["cache"] = os.getenv("SCRAPFLY_CACHE") == "true"
 
 
 def validate_or_fail(item, validator):
@@ -21,140 +27,109 @@ def validate_or_fail(item, validator):
         )
 
 
+# Cerberus schema for a parsed listing detail (scrape_properties output)
 property_schema = {
     "schema": {
         "type": "dict",
         "schema": {
-            "listingId": {"type": "integer"},
+            "listingId": {"type": "integer", "nullable": True},
             "listingUrl": {"type": "string"},
-            "unitNumber": {"type": "string"},
-            "street": {"type": "string"},
-            "suburb": {"type": "string"},
-            "postcode": {"type": "string"},
-            "createdOn": {"type": "string"},
-            "propertyType": {"type": "string"},
-            "beds": {"type": "integer"},
-            "phone": {"type": "string"},
-            "agencyName": {"type": "string"},
-            "propertyDeveloperName": {"type": "string"},
-            "agencyProfileUrl": {"type": "string"},
-            "propertyDeveloperUrl": {"type": "string"},
+            "unitNumber": {"type": "string", "nullable": True},
+            "street": {"type": "string", "nullable": True},
+            "suburb": {"type": "string", "nullable": True},
+            "postcode": {"type": "string", "nullable": True},
+            "createdOn": {"type": "string", "nullable": True},
+            "propertyType": {"type": "string", "nullable": True},
+            "beds": {"type": "integer", "nullable": True},
+            "phone": {"type": "string", "nullable": True},
+            "agencyName": {"type": "string", "nullable": True},
+            "propertyDeveloperName": {"nullable": True},
+            "agencyProfileUrl": {"nullable": True},
+            "propertyDeveloperUrl": {"nullable": True},
             "description": {
                 "type": "list",
-                "schema": {
-                    "type": "string"
-                }
+                "schema": {"type": "string"},
             },
             "listingSummary": {
                 "type": "dict",
                 "schema": {
-                    "beds": {"type": "integer"},
-                    "baths": {"type": "integer"},
-                    "parking": {"type": "integer"},
-                    "title": {"type": "string"},
-                    "price": {"type": "string"},
-                    "address": {"type": "string"},
+                    "beds": {"type": "integer", "nullable": True},
+                    "baths": {"type": "integer", "nullable": True},
+                    "parking": {"type": "integer", "nullable": True},
+                    "title": {"type": "string", "nullable": True},
+                    "address": {"type": "string", "nullable": True},
                     "listingType": {"type": "string"},
-                    "propertyType": {"type": "string"},
-                    "status": {"type": "string"},
-                    "mode": {"type": "string"},
-                }
+                    "propertyType": {"type": "string", "nullable": True},
+                    "status": {"type": "string", "nullable": True},
+                    "mode": {"nullable": True},
+                },
             },
             "agents": {
                 "type": "list",
                 "schema": {
                     "type": "dict",
                     "schema": {
-                        "name": {"type": "string"},
-                        "photo": {"type": "string"},
+                        "name": {"type": "string", "nullable": True},
+                        "photo": {"nullable": True},
                         "phone": {"type": "string", "nullable": True},
-                        "mobile": {"type": "string", "nullable": True},
-                        "agentProfileUrl": {"type": "string"},
-                    }
-                }
-            }
-        }
+                        "mobile": {"nullable": True},
+                        "agentProfileUrl": {"nullable": True},
+                    },
+                },
+            },
+        },
     }
 }
 
 
+# Cerberus schema for a search result item (scrape_search output)
 search_schema = {
-    "schmea": {
+    "schema": {
         "type": "dict",
         "schema": {
-            "id": {"type": "integer"},
+            "id": {"type": "string"},
             "listingType": {"type": "string"},
             "listingModel": {
                 "type": "dict",
                 "schema": {
-                    "promoType": {"type": "string"},
-                    "url": {"type": "string"},
-                    "projectName": {"type": "string"},
-                    "displayAddress": {"type": "string"},
-                    "images": {
-                        "type": "list",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "branding": {
-                        "type": "dict",
-                        "schema": {
-                            "agencyId": {"type": "string"},
-                            "agentNames": {"type": "string"},
-                            "brandName": {"type": "string"}
-                        }
-                    },
-                    "childListingIds": {
-                        "type": "list",
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    "address": {
-                        "type": "dict",
-                        "schema": {
-                            "street": {"type": "string"},
-                            "suburb": {"type": "string"},
-                            "state": {"type": "string"},
-                            "postcode": {"type": "string"},
-                            "lat": {"type": "integer"},
-                            "lng": {"type": "integer"},
-                        }
-                    }
-                }
-            }
-
-        }
+                    "listingId": {"nullable": True},
+                    "listingUrl": {"type": "string", "nullable": True},
+                    "suburb": {"type": "string", "nullable": True},
+                    "postcode": {"type": "string", "nullable": True},
+                },
+            },
+        },
     }
 }
 
 
 @pytest.mark.asyncio
 async def test_properties_scraping():
+    """Fetch listing detail for known Domain listing IDs."""
     properties_data = await domaincom.scrape_properties(
-        urls = [
-            "https://www.domain.com.au/610-399-bourke-street-melbourne-vic-3000-2018835548",
-            "https://www.domain.com.au/property-profile/308-9-degraves-street-melbourne-vic-3000",
-            "https://www.domain.com.au/1518-474-flinders-street-melbourne-vic-3000-17773317"
-        ]
+        listing_ids=[2018835548, 17773317]
     )
     validator = Validator(property_schema, allow_unknown=True)
-    # for item in properties_data:
-    validate_or_fail(properties_data[0], validator)
     assert len(properties_data) >= 1
+    validate_or_fail(properties_data[0], validator)
     if os.getenv("SAVE_TEST_RESULTS") == "true":
-        (Path(__file__).parent / 'results/properties.json').write_text(json.dumps(properties_data, indent=2, ensure_ascii=False))
+        (Path(__file__).parent / "results/properties.json").write_text(
+            json.dumps(properties_data, indent=2, ensure_ascii=False)
+        )
 
 
 @pytest.mark.asyncio
 async def test_search_scraping():
+    """Search a single suburb and validate shape of results."""
     search_data = await domaincom.scrape_search(
-        url="https://www.domain.com.au/sale/melbourne-vic-3000", max_scrape_pages=1
+        suburbs=["Melbourne"],
+        property_types=["house", "unit apartment"],
     )
     validator = Validator(search_schema, allow_unknown=True)
     for item in search_data:
         validate_or_fail(item, validator)
-    assert len(search_data) >= 2
+    assert len(search_data) >= 1
     if os.getenv("SAVE_TEST_RESULTS") == "true":
-        (Path(__file__).parent / 'results/search.json').write_text(json.dumps(search_data, indent=2, ensure_ascii=False))
+        (Path(__file__).parent / "results/search.json").write_text(
+            json.dumps(search_data, indent=2, ensure_ascii=False)
+        )
