@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "undervalued-house-finder-ingestion"
+version = "0.1.0"
+description = "Listing ingestion system for property listings"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "ingestion", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pydantic = "^2.5.0"
+supabase = "^2.0.0"
+python-dotenv = "^1.0.0"
+apscheduler = "^3.10.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.3.1"
+pytest-asyncio = "^0.21.0"
+black = "^23.7.0"
+ruff = "^0.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
