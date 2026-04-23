@@ -17,6 +17,7 @@ models_path = Path(__file__).parent.parent.parent.parent.parent / "models" / "sr
 sys.path.insert(0, str(models_path))
 
 from models import Listing, ListingStatus, EventTimeline, EventType
+from models.valuation import PriceModel, UndervaluationDetector, compute_undervalue_score
 
 from .database import SupabaseRepository
 from .readers import RealestateReader, DomainReader, detect_reader_type
@@ -46,6 +47,8 @@ class Ingester:
         self,
         repository: SupabaseRepository,
         distress_window_days: int = _DEFAULT_DISTRESS_WINDOW_DAYS,
+        price_model: Optional[PriceModel] = None,
+        undervaluation_detector: Optional[UndervaluationDetector] = None,
     ) -> None:
         """
         Initialize ingester with database repository.
@@ -53,10 +56,19 @@ class Ingester:
         Args:
             repository: SupabaseRepository instance
             distress_window_days: Window (days) for DISTRESS_SIGNAL compound detection (M3-3).
+            price_model: Optional PriceModel for baseline valuation (M2-1).
+                         Defaults to a PriceModel loaded from the bundled seed file.
+            undervaluation_detector: Optional UndervaluationDetector for emitting
+                                     UNDERVALUED_THRESHOLD_CROSSED events (M2-3).
+                                     Defaults to the 10% threshold.
         """
         self.repository = repository
         self.event_timeline = EventTimeline()
         self.distress_window_days = distress_window_days
+        self.price_model = price_model if price_model is not None else PriceModel()
+        self.undervaluation_detector = (
+            undervaluation_detector if undervaluation_detector is not None else UndervaluationDetector()
+        )
         self.stats = {
             "processed": 0,
             "created": 0,
@@ -150,6 +162,11 @@ class Ingester:
         # Get existing listing from database
         existing = self.repository.get_listing(listing.listing_id)
 
+        # M2-1 / M2-2 / M2-3: compute estimated price, undervalue score, and
+        # emit UNDERVALUED_THRESHOLD_CROSSED event on state change.  Done before
+        # upsert so the valuation fields are persisted in the same write.
+        self._compute_valuation(listing)
+
         if existing:
             # Update existing listing with change detection
             self._update_listing(listing, existing)
@@ -162,6 +179,43 @@ class Ingester:
         # Save events to database
         self._save_events(listing.listing_id)
 
+    def _compute_valuation(self, listing: Listing) -> None:
+        """
+        Populate ``estimated_price``, ``undervalue_score``, and
+        ``valuation_classification`` on the listing, and emit an
+        ``UNDERVALUED_THRESHOLD_CROSSED`` event when the listing newly crosses
+        the threshold (state-change only — handled by UndervaluationDetector).
+
+        Recomputed on every ingest so that changes to the seed median data, the
+        listed price, or any valuation input produce up-to-date results.
+
+        Skips scoring (but still sets estimated_price) when ``current_price``
+        is missing — the score is undefined without an asking price.
+        """
+        estimated = self.price_model.estimate(
+            suburb=listing.suburb,
+            property_type=listing.property_type,
+            bedrooms=listing.bedrooms,
+        )
+        listing.estimated_price = estimated
+
+        if listing.current_price is None or listing.current_price <= 0:
+            listing.undervalue_score = None
+            listing.valuation_classification = None
+            return
+
+        result = compute_undervalue_score(
+            listing_id=listing.listing_id,
+            listed_price=listing.current_price,
+            estimated_price=estimated,
+        )
+        listing.undervalue_score = result.undervalue_score
+        listing.valuation_classification = result.classification
+
+        fired = self.undervaluation_detector.check(result, self.event_timeline)
+        if fired:
+            self.stats["events_generated"] += 1
+
     def _update_listing(self, new_listing: Listing, existing: Dict) -> None:
         """
         Update existing listing with change detection.
@@ -171,11 +225,7 @@ class Ingester:
             existing: Existing listing data from database
         """
         # Detect price changes
-        existing_price = (
-            Decimal(str(existing.get("current_price")))
-            if existing.get("current_price")
-            else None
-        )
+        existing_price = Decimal(str(existing.get("current_price"))) if existing.get("current_price") else None
         new_price = new_listing.current_price
 
         if existing_price and new_price and new_price < existing_price:
@@ -197,11 +247,7 @@ class Ingester:
 
         # Detect auction rescheduling and cancellation via auction_datetime change
         existing_auction = existing.get("auction_datetime")
-        new_auction = (
-            new_listing.auction_datetime.isoformat()
-            if new_listing.auction_datetime
-            else None
-        )
+        new_auction = new_listing.auction_datetime.isoformat() if new_listing.auction_datetime else None
 
         # M3-1: auction_datetime was set and is now None/removed → AUCTION_CANCELLED
         # (Covers the case where the status field alone does not change but the
@@ -383,15 +429,10 @@ class Ingester:
 
         for event in events:
             # Check if event already exists (idempotency)
-            existing_events = self.repository.get_listing_events(
-                listing_id, event.event_type
-            )
+            existing_events = self.repository.get_listing_events(listing_id, event.event_type)
 
             # Simple check: if event with same type and timestamp exists, skip
-            event_exists = any(
-                e.get("timestamp") == event.timestamp.isoformat()
-                for e in existing_events
-            )
+            event_exists = any(e.get("timestamp") == event.timestamp.isoformat() for e in existing_events)
 
             if not event_exists:
                 self.repository.add_event(event)
@@ -414,4 +455,3 @@ class Ingester:
             "events_generated": 0,
             "errors": 0,
         }
-

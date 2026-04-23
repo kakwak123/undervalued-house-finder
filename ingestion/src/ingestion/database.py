@@ -55,12 +55,7 @@ class SupabaseRepository:
             Listing data as dict, or None if not found
         """
         try:
-            response = (
-                self.client.table("listings")
-                .select("*")
-                .eq("listing_id", listing_id)
-                .execute()
-            )
+            response = self.client.table("listings").select("*").eq("listing_id", listing_id).execute()
             if response.data:
                 return response.data[0]
             return None
@@ -82,11 +77,7 @@ class SupabaseRepository:
         listing_data = self._listing_to_dict(listing)
 
         try:
-            response = (
-                self.client.table("listings")
-                .upsert(listing_data, on_conflict="listing_id")
-                .execute()
-            )
+            response = self.client.table("listings").upsert(listing_data, on_conflict="listing_id").execute()
             return response.data[0] if response.data else listing_data
         except Exception as e:
             print(f"Error upserting listing {listing.listing_id}: {e}")
@@ -102,6 +93,7 @@ class SupabaseRepository:
         Returns:
             Dictionary representation
         """
+
         # Convert Decimal to string for JSON serialization
         def decimal_to_str(value):
             return str(value) if value is not None else None
@@ -143,6 +135,12 @@ class SupabaseRepository:
                 }
                 for ah in listing.auction_history
             ],
+            "estimated_price": decimal_to_str(listing.estimated_price),
+            "undervalue_score": listing.undervalue_score,
+            "valuation_classification": (
+                listing.valuation_classification.value if listing.valuation_classification else None
+            ),
+            "distress_signal": listing.distress_signal,
             "created_at": datetime_to_str(listing.created_at) or datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
         }
@@ -171,9 +169,7 @@ class SupabaseRepository:
             print(f"Error adding event: {e}")
             raise
 
-    def get_listing_events(
-        self, listing_id: str, event_type: Optional[EventType] = None
-    ) -> List[Dict[str, Any]]:
+    def get_listing_events(self, listing_id: str, event_type: Optional[EventType] = None) -> List[Dict[str, Any]]:
         """
         Get events for a listing.
 
@@ -217,4 +213,3 @@ class SupabaseRepository:
         except Exception as e:
             print(f"Error fetching listings: {e}")
             return []
-
