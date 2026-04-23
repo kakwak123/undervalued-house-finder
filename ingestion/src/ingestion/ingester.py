@@ -204,11 +204,27 @@ class Ingester:
             listing.valuation_classification = None
             return
 
-        result = compute_undervalue_score(
-            listing_id=listing.listing_id,
-            listed_price=listing.current_price,
-            estimated_price=estimated,
-        )
+        # compute_undervalue_score raises ValueError when estimated_price <= 0
+        # (e.g. SUBURB_MEDIANS_PATH points at a bad seed file with a zeroed
+        # entry).  Don't let seed-data issues abort ingestion for the listing.
+        try:
+            result = compute_undervalue_score(
+                listing_id=listing.listing_id,
+                listed_price=listing.current_price,
+                estimated_price=estimated,
+            )
+        except ValueError:
+            log.exception(
+                "Failed to compute undervalue score for %s (current_price=%s, estimated_price=%s); "
+                "leaving undervalue fields unset",
+                listing.listing_id,
+                listing.current_price,
+                estimated,
+            )
+            listing.undervalue_score = None
+            listing.valuation_classification = None
+            return
+
         listing.undervalue_score = result.undervalue_score
         listing.valuation_classification = result.classification
 

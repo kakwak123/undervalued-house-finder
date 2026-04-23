@@ -218,6 +218,21 @@ class TestUndervalueScorePopulated:
         assert listing.undervalue_score is None
         assert listing.valuation_classification is None
 
+    def test_zero_estimated_price_does_not_abort_ingest(self, tmp_path: Path) -> None:
+        """Bad seed data (zero median) → upsert still happens, valuation fields None."""
+        repo = _make_mock_repo(existing=None)
+        ingester = Ingester(
+            repo,
+            price_model=_tiny_price_model(tmp_path, median=0),  # pathological seed
+        )
+        listing = _make_listing(current_price=Decimal("700000"))
+        ingester._ingest_listing(listing)
+
+        assert listing.estimated_price == Decimal("0")
+        assert listing.undervalue_score is None
+        assert listing.valuation_classification is None
+        assert repo.upsert_listing.called
+
 
 # ---------------------------------------------------------------------------
 # #3: UNDERVALUED_THRESHOLD_CROSSED event emitted on state change only
