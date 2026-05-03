@@ -287,8 +287,10 @@ def get_opportunities(
     """
     Return listings ranked by composite opportunity score (highest first).
 
-    Fetches listings from Supabase, runs valuation + scoring, filters by
-    ``min_score``, and returns sorted by ``total_score`` descending.
+    Reads cached ``opportunity_score`` / valuation columns from Supabase
+    (populated by the ingestion pipeline).  Falls back to on-the-fly scoring
+    only for rows whose ``opportunity_score`` has not yet been cached, so
+    legacy listings ingested before the wiring landed still get a score.
     """
     repo = _get_repo()
 
@@ -300,18 +302,27 @@ def get_opportunities(
     for row in rows:
         listing_id = row.get("listing_id", "")
         events_raw = repo.get_events_for_listing(listing_id)
-        opp_score = _score_listing_row(row, events_raw)
 
-        if opp_score.total_score < min_score:
+        cached_score = row.get("opportunity_score")
+        if cached_score is not None:
+            opp_total = float(cached_score)
+            opp_breakdown: Dict[str, float] = {"cached": opp_total}
+        else:
+            # Fallback: compute on the fly for rows pre-dating ingest-time scoring
+            opp_score = _score_listing_row(row, events_raw)
+            opp_total = opp_score.total_score
+            opp_breakdown = opp_score.breakdown
+
+        if opp_total < min_score:
             continue
 
-        # Compute valuation fields for response
+        # Prefer cached valuation fields; only recompute when missing
         estimated_str: Optional[str] = row.get("estimated_price")
-        undervalue_score: Optional[float] = None
+        undervalue_score: Optional[float] = row.get("undervalue_score")
         classification: Optional[str] = row.get("valuation_classification")
 
         price_raw = row.get("current_price")
-        if price_raw:
+        if price_raw and (estimated_str is None or undervalue_score is None):
             try:
                 current_price = Decimal(str(price_raw))
                 pm = _get_price_model()
@@ -321,9 +332,7 @@ def get_opportunities(
                 beds = int(bedrooms_raw) if bedrooms_raw is not None else None
                 estimated = pm.estimate(suburb, pt, beds)
                 estimated_str = str(estimated)
-                from models.valuation import compute_undervalue_score as _cuv
-
-                vr = _cuv(listing_id, current_price, estimated)
+                vr = compute_undervalue_score(listing_id, current_price, estimated)
                 undervalue_score = vr.undervalue_score
                 classification = vr.classification.value
             except Exception:
@@ -340,8 +349,8 @@ def get_opportunities(
                 estimated_price=estimated_str,
                 undervalue_score=undervalue_score,
                 classification=classification,
-                total_score=opp_score.total_score,
-                score_breakdown=opp_score.breakdown,
+                total_score=opp_total,
+                score_breakdown=opp_breakdown,
                 active_signals=_active_signals(events_raw, bool(row.get("distress_signal", False))),
             )
         )

@@ -212,6 +212,35 @@ def test_opportunities_empty_db_returns_empty_list() -> None:
     assert response.json() == []
 
 
+def test_opportunities_uses_cached_score_when_present() -> None:
+    """When the row carries a cached opportunity_score, the API should return
+    it verbatim instead of recomputing from scratch."""
+    cached_row = {
+        **_LISTING_ROW,
+        "listing_id": "prop-cached",
+        "opportunity_score": 87.5,
+        "estimated_price": "900000",
+        "undervalue_score": 11.1,
+        "valuation_classification": "undervalued",
+    }
+    mock_repo = _make_mock_repo(all_listings=[cached_row])
+    with patch("api.main._get_repo", return_value=mock_repo):
+        response = client.get("/api/opportunities")
+
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 1
+    item = items[0]
+    assert item["listing_id"] == "prop-cached"
+    assert item["total_score"] == 87.5
+    # Cached path tags the breakdown with a single "cached" key
+    assert item["score_breakdown"] == {"cached": 87.5}
+    # Cached valuation fields should also flow through
+    assert item["estimated_price"] == "900000"
+    assert item["undervalue_score"] == 11.1
+    assert item["classification"] == "undervalued"
+
+
 # ---------------------------------------------------------------------------
 # GET /api/listings/{listing_id}  (M4-3)
 # ---------------------------------------------------------------------------
