@@ -211,7 +211,11 @@ class TestIngesterIngestListingsData:
         repo = _make_mock_repository()
         ingester = Ingester(repo)
         ingester.ingest_listings_data([REALESTATE_ITEM, REALESTATE_ITEM_2], source_type="realestate")
-        assert repo.upsert_listing.call_count == 2
+        # Each listing is upserted at least once on the create path; listings
+        # with a price get a second upsert when the opportunity score is persisted.
+        assert repo.upsert_listing.call_count >= 2
+        upserted_ids = {call.args[0].listing_id for call in repo.upsert_listing.call_args_list}
+        assert upserted_ids == {"149785064", "999000001"}
 
     def test_invalid_source_type_raises(self) -> None:
         repo = _make_mock_repository()

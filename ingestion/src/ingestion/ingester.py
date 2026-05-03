@@ -17,6 +17,14 @@ models_path = Path(__file__).parent.parent.parent.parent.parent / "models" / "sr
 sys.path.insert(0, str(models_path))
 
 from models import Listing, ListingStatus, EventTimeline, EventType
+from models.events import Event
+from models.scoring import OpportunityScorer
+from models.valuation import (
+    PriceModel,
+    UndervaluationDetector,
+    ValuationResult,
+    compute_undervalue_score,
+)
 
 from .database import SupabaseRepository
 from .readers import RealestateReader, DomainReader, detect_reader_type
@@ -46,17 +54,34 @@ class Ingester:
         self,
         repository: SupabaseRepository,
         distress_window_days: int = _DEFAULT_DISTRESS_WINDOW_DAYS,
+        price_model: Optional[PriceModel] = None,
+        undervaluation_detector: Optional[UndervaluationDetector] = None,
+        opportunity_scorer: Optional[OpportunityScorer] = None,
     ) -> None:
         """
         Initialize ingester with database repository.
 
         Args:
-            repository: SupabaseRepository instance
+            repository: SupabaseRepository instance.
             distress_window_days: Window (days) for DISTRESS_SIGNAL compound detection (M3-3).
+            price_model: Optional PriceModel — defaults to PriceModel() with bundled seed data.
+                         Pass an instance for tests or custom suburb medians.
+            undervaluation_detector: Optional UndervaluationDetector — defaults to
+                                     UndervaluationDetector(threshold_pct=10.0).
+            opportunity_scorer: Optional OpportunityScorer — defaults to OpportunityScorer().
         """
         self.repository = repository
         self.event_timeline = EventTimeline()
         self.distress_window_days = distress_window_days
+        self.price_model = price_model if price_model is not None else PriceModel()
+        self.undervaluation_detector = (
+            undervaluation_detector
+            if undervaluation_detector is not None
+            else UndervaluationDetector(threshold_pct=10.0)
+        )
+        self.opportunity_scorer = (
+            opportunity_scorer if opportunity_scorer is not None else OpportunityScorer()
+        )
         self.stats = {
             "processed": 0,
             "created": 0,
@@ -147,6 +172,11 @@ class Ingester:
             listing.created_at = datetime.utcnow()
         listing.updated_at = datetime.utcnow()
 
+        # M2: compute valuation (estimated_price, undervalue_score, classification)
+        # before persistence, so the upsert writes the latest values.
+        # Also emits UNDERVALUED_THRESHOLD_CROSSED on first crossing.
+        self._compute_valuation(listing)
+
         # Get existing listing from database
         existing = self.repository.get_listing(listing.listing_id)
 
@@ -161,6 +191,10 @@ class Ingester:
 
         # Save events to database
         self._save_events(listing.listing_id)
+
+        # M3-4: compute opportunity score using persisted events + in-memory events
+        # from this run. Re-upserts only if the score is newly populated/changed.
+        self._compute_opportunity_score(listing)
 
     def _update_listing(self, new_listing: Listing, existing: Dict) -> None:
         """
@@ -297,6 +331,140 @@ class Ingester:
 
         # M3-3: check for DISTRESS_SIGNAL compound condition after persisting
         self._check_distress_signal(new_listing)
+
+    def _compute_valuation(self, listing: Listing) -> Optional[ValuationResult]:
+        """
+        M2-1/M2-2/M2-3: Estimate price, compute undervalue score, set
+        ``estimated_price``, ``undervalue_score``, and ``valuation_classification``
+        on *listing*.  Also runs the ``UndervaluationDetector`` to emit a
+        single ``UNDERVALUED_THRESHOLD_CROSSED`` event on first crossing.
+
+        Skipped when the listing has no ``current_price`` (cannot compute a
+        valuation result without one).
+
+        Args:
+            listing: Listing to enrich (mutated in place).
+
+        Returns:
+            The ``ValuationResult`` if computed, else ``None``.
+        """
+        if listing.current_price is None or listing.current_price <= 0:
+            return None
+
+        try:
+            estimated = self.price_model.estimate(
+                listing.suburb,
+                listing.property_type,
+                listing.bedrooms,
+            )
+        except Exception as exc:
+            log.warning(
+                "Ingester: valuation estimate failed for %s: %s",
+                listing.listing_id,
+                exc,
+            )
+            return None
+
+        try:
+            result = compute_undervalue_score(
+                listing.listing_id,
+                listing.current_price,
+                estimated,
+            )
+        except ValueError as exc:
+            log.warning(
+                "Ingester: compute_undervalue_score failed for %s: %s",
+                listing.listing_id,
+                exc,
+            )
+            return None
+
+        listing.estimated_price = result.estimated_price
+        listing.undervalue_score = result.undervalue_score
+        listing.valuation_classification = result.classification
+
+        emitted = self.undervaluation_detector.check(result, self.event_timeline)
+        if emitted:
+            self.stats["events_generated"] += 1
+
+        return result
+
+    def _compute_opportunity_score(self, listing: Listing) -> None:
+        """
+        M3-4: Compute the composite opportunity score for *listing* using the
+        persisted events plus any in-memory events from this ingestion run.
+        Sets ``listing.opportunity_score`` and re-upserts the listing only if
+        the score is non-None and differs from the previously persisted value.
+
+        Skipped when no valuation could be computed (no ``current_price``) and
+        the listing has no events — there is nothing to score.
+
+        Args:
+            listing: Listing to score (mutated in place).
+        """
+        # Build a ValuationResult on demand if we have the data
+        valuation_result: Optional[ValuationResult] = None
+        if (
+            listing.current_price is not None
+            and listing.estimated_price is not None
+            and listing.estimated_price > 0
+        ):
+            try:
+                valuation_result = compute_undervalue_score(
+                    listing.listing_id,
+                    listing.current_price,
+                    listing.estimated_price,
+                )
+            except ValueError:
+                valuation_result = None
+
+        # Merge db-persisted events + in-memory events from this run
+        db_events_raw = self.repository.get_listing_events(listing.listing_id)
+        events: List[Event] = []
+        seen_keys: set = set()
+
+        for raw in db_events_raw:
+            try:
+                ts_raw = raw.get("timestamp")
+                if isinstance(ts_raw, str):
+                    ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                else:
+                    ts = ts_raw or datetime.utcnow()
+                ev_type = EventType(raw["event_type"])
+                key = (ev_type.value, ts.isoformat() if hasattr(ts, "isoformat") else str(ts))
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                events.append(
+                    Event(
+                        event_type=ev_type,
+                        listing_id=listing.listing_id,
+                        timestamp=ts,
+                        metadata=raw.get("metadata") or {},
+                    )
+                )
+            except (KeyError, ValueError, TypeError):
+                continue
+
+        for ev in self.event_timeline.get_events_for_listing(listing.listing_id):
+            key = (ev.event_type.value, ev.timestamp.isoformat())
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            events.append(ev)
+
+        # If we have nothing to score on, leave opportunity_score unchanged
+        if valuation_result is None and not events and not listing.distress_signal:
+            return
+
+        score = self.opportunity_scorer.score(listing, valuation_result, events)
+        new_score = score.total_score
+
+        # Re-upsert only if value changed (avoids spurious writes)
+        previous = listing.opportunity_score
+        if previous is None or abs((previous or 0.0) - new_score) > 1e-9:
+            listing.opportunity_score = new_score
+            self.repository.upsert_listing(listing)
 
     def _check_distress_signal(self, listing: Listing) -> None:
         """

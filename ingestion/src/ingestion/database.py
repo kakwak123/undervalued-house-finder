@@ -125,6 +125,15 @@ class SupabaseRepository:
             "property_link": listing.property_link,
             "description": listing.description,
             "source": listing.source,
+            "estimated_price": decimal_to_str(listing.estimated_price),
+            "undervalue_score": listing.undervalue_score,
+            "valuation_classification": (
+                listing.valuation_classification.value
+                if listing.valuation_classification is not None
+                else None
+            ),
+            "distress_signal": listing.distress_signal,
+            "opportunity_score": listing.opportunity_score,
             "address": listing.address.model_dump_json(),
             "price_history": [
                 {

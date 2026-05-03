@@ -102,6 +102,14 @@ class Listing(BaseModel):
         description="True when listing has both AUCTION_VOIDED and PRICE_DROPPED within the distress window",
     )
 
+    # Cached composite opportunity score (M3-4) — populated by Ingester
+    opportunity_score: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Composite opportunity score 0–100 produced by OpportunityScorer",
+    )
+
     # Additional metadata
     property_link: Optional[str] = Field(None, description="URL to property listing")
     description: Optional[str] = Field(None, description="Property description")
