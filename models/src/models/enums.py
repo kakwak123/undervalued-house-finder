@@ -44,21 +44,24 @@ class PropertyType(str, Enum):
 
         value_lower = value.lower().strip()
 
-        # Handle common variations
-        if "house" in value_lower:
-            return cls.HOUSE
+        # Handle common variations.  Order matters: check more specific
+        # types before the substring "house" (so "Townhouse" isn't HOUSE),
+        # and prefer UNIT for the realestate.com.au combined category
+        # "Apartment / Unit / Flat" which contains both "apartment" and "unit".
+        if "townhouse" in value_lower or "town house" in value_lower:
+            return cls.TOWNHOUSE
         elif "unit" in value_lower or "flat" in value_lower:
             return cls.UNIT
         elif "apartment" in value_lower:
             return cls.APARTMENT
-        elif "townhouse" in value_lower or "town house" in value_lower:
-            return cls.TOWNHOUSE
         elif "villa" in value_lower:
             return cls.VILLA
-        elif "land" in value_lower:
-            return cls.LAND
         elif "studio" in value_lower:
             return cls.STUDIO
+        elif "land" in value_lower:
+            return cls.LAND
+        elif "house" in value_lower:
+            return cls.HOUSE
         else:
             return cls.OTHER
 

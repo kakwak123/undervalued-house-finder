@@ -121,7 +121,8 @@ def test_listing_status_enum():
     ]
 
     for status in required_statuses:
-        assert hasattr(ListingStatus, status.upper().replace("_", ""))
+        # Enum attribute name keeps underscores ("UNDER_OFFER", not "UNDEROFFER")
+        assert hasattr(ListingStatus, status.upper())
         assert ListingStatus(status) is not None
 
 
