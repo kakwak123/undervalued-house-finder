@@ -24,7 +24,11 @@ from typing import Any, Dict, List, Optional
 import jmespath
 from loguru import logger as log
 from playwright.async_api import Page, async_playwright
-from playwright_stealth import stealth_async
+from playwright_stealth import Stealth
+
+async def stealth_async(page):
+    """Compatibility shim for playwright-stealth v2."""
+    await Stealth().apply_stealth_async(page)
 
 from scraper_utils import RateLimiter, retry_on_failure
 
@@ -55,6 +59,11 @@ def _get_max_pages() -> int:
     if raw.strip().isdigit():
         return int(raw.strip())
     return _DEFAULT_MAX_PAGES
+
+
+def _get_headless() -> bool:
+    """Return False if REALESTATE_HEADLESS=false, so browser is visible."""
+    return os.environ.get("REALESTATE_HEADLESS", "true").lower() not in ("false", "0", "no")
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +296,7 @@ async def scrape_search(
     log.info(f"scrape_search: url={url!r} max_pages={max_scrape_pages}")
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await pw.chromium.launch(headless=_get_headless())
         context = await browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -355,7 +364,7 @@ async def scrape_properties(urls: List[str]) -> List[Dict[str, Any]]:
     properties: List[Dict[str, Any]] = []
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await pw.chromium.launch(headless=_get_headless())
         context = await browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
