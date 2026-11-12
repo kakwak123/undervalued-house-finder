@@ -289,6 +289,115 @@ class TestUndervaluedThresholdEvent:
         crossed = [e for e in events if e.event_type == EventType.UNDERVALUED_THRESHOLD_CROSSED]
         assert len(crossed) == 1
 
+    # -- Deduplication across process restarts ------------------------------
+    #
+    # The detector's state is in-memory, so each test below builds a *fresh*
+    # Ingester against a repository that already holds the listing, which is
+    # exactly what a new CLI / scheduled run sees.
+
+    @staticmethod
+    def _existing_row(**overrides: Any) -> Dict[str, Any]:
+        row: Dict[str, Any] = {
+            "listing_id": "L1",
+            "current_price": "700000",
+            "status": "unknown",
+            "auction_datetime": None,
+            "estimated_price": "1000000",
+            "undervalue_score": 30.0,
+            "valuation_classification": "significantly_undervalued",
+        }
+        row.update(overrides)
+        return row
+
+    @staticmethod
+    def _crossed_events(ingester: Ingester) -> list:
+        events = ingester.event_timeline.get_events_for_listing("L1")
+        return [e for e in events if e.event_type == EventType.UNDERVALUED_THRESHOLD_CROSSED]
+
+    @staticmethod
+    def _persisted_crossed_events(repo: MagicMock) -> list:
+        return [
+            call.args[0]
+            for call in repo.add_event.call_args_list
+            if call.args[0].event_type == EventType.UNDERVALUED_THRESHOLD_CROSSED
+        ]
+
+    def test_no_duplicate_event_after_process_restart(self, tmp_path: Path) -> None:
+        """Fresh Ingester + listing already persisted as undervalued: no new event."""
+        repo = _make_mock_repo(existing=self._existing_row())
+        ingester = Ingester(repo, price_model=_tiny_price_model(tmp_path, median=1_000_000))
+
+        ingester._ingest_listing(_make_listing(current_price=Decimal("700000")))
+
+        assert self._crossed_events(ingester) == []
+        assert self._persisted_crossed_events(repo) == []
+        assert ingester.stats["events_generated"] == 0
+
+    def test_repeated_restarts_never_persist_duplicates(self, tmp_path: Path) -> None:
+        """Simulate several separate runs end to end: exactly one event is persisted."""
+        repo = _make_mock_repo(existing=None)
+        model = _tiny_price_model(tmp_path, median=1_000_000)
+
+        # Run 1: listing is new and undervalued, so the event is persisted once.
+        listing = _make_listing(current_price=Decimal("700000"))
+        Ingester(repo, price_model=model)._ingest_listing(listing)
+        assert len(self._persisted_crossed_events(repo)) == 1
+
+        # Runs 2 and 3: new processes, DB now holds what run 1 wrote.
+        repo.get_listing.return_value = self._existing_row(undervalue_score=listing.undervalue_score)
+        for _ in range(2):
+            Ingester(repo, price_model=model)._ingest_listing(_make_listing(current_price=Decimal("700000")))
+
+        assert len(self._persisted_crossed_events(repo)) == 1
+
+    def test_event_emitted_after_restart_when_previously_not_undervalued(self, tmp_path: Path) -> None:
+        """Persisted score below threshold, now undervalued: a genuine crossing still fires."""
+        repo = _make_mock_repo(
+            existing=self._existing_row(
+                current_price="980000", undervalue_score=2.0, valuation_classification="fair_value"
+            )
+        )
+        ingester = Ingester(repo, price_model=_tiny_price_model(tmp_path, median=1_000_000))
+
+        ingester._ingest_listing(_make_listing(current_price=Decimal("700000")))
+
+        assert len(self._crossed_events(ingester)) == 1
+        assert len(self._persisted_crossed_events(repo)) == 1
+
+    def test_event_emitted_for_existing_listing_never_scored(self, tmp_path: Path) -> None:
+        """Rows ingested before valuation was wired in have no score: first crossing fires."""
+        repo = _make_mock_repo(
+            existing=self._existing_row(estimated_price=None, undervalue_score=None, valuation_classification=None)
+        )
+        ingester = Ingester(repo, price_model=_tiny_price_model(tmp_path, median=1_000_000))
+
+        ingester._ingest_listing(_make_listing(current_price=Decimal("700000")))
+
+        assert len(self._crossed_events(ingester)) == 1
+
+    def test_persisted_score_judged_against_configured_threshold(self, tmp_path: Path) -> None:
+        """A prior 12% score is not undervalued for a 20% detector, so 30% now is a crossing."""
+        repo = _make_mock_repo(existing=self._existing_row(current_price="880000", undervalue_score=12.0))
+        ingester = Ingester(
+            repo,
+            price_model=_tiny_price_model(tmp_path, median=1_000_000),
+            undervaluation_detector=UndervaluationDetector(threshold_pct=20.0),
+        )
+
+        ingester._ingest_listing(_make_listing(current_price=Decimal("700000")))
+
+        assert len(self._crossed_events(ingester)) == 1
+
+    def test_malformed_persisted_score_does_not_abort_ingest(self, tmp_path: Path) -> None:
+        """A non-numeric persisted score is ignored rather than failing the listing."""
+        repo = _make_mock_repo(existing=self._existing_row(undervalue_score="not-a-number"))
+        ingester = Ingester(repo, price_model=_tiny_price_model(tmp_path, median=1_000_000))
+
+        ingester._ingest_listing(_make_listing(current_price=Decimal("700000")))
+
+        assert repo.upsert_listing.called
+        assert len(self._crossed_events(ingester)) == 1
+
 
 # ---------------------------------------------------------------------------
 # Persistence: valuation fields are included in the upsert payload

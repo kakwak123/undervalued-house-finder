@@ -165,7 +165,7 @@ class Ingester:
         # M2-1 / M2-2 / M2-3: compute estimated price, undervalue score, and
         # emit UNDERVALUED_THRESHOLD_CROSSED event on state change.  Done before
         # upsert so the valuation fields are persisted in the same write.
-        self._compute_valuation(listing)
+        self._compute_valuation(listing, existing)
 
         if existing:
             # Update existing listing with change detection
@@ -179,7 +179,7 @@ class Ingester:
         # Save events to database
         self._save_events(listing.listing_id)
 
-    def _compute_valuation(self, listing: Listing) -> None:
+    def _compute_valuation(self, listing: Listing, existing: Optional[Dict[str, Any]] = None) -> None:
         """
         Populate ``estimated_price``, ``undervalue_score``, and
         ``valuation_classification`` on the listing, and emit an
@@ -191,6 +191,13 @@ class Ingester:
 
         Skips scoring (but still sets estimated_price) when ``current_price``
         is missing — the score is undefined without an asking price.
+
+        Args:
+            listing:  Listing being ingested (mutated in place).
+            existing: The listing's currently persisted row, if any.  Its
+                      ``undervalue_score`` seeds the detector so that a fresh
+                      process does not re-emit the event for a listing that was
+                      already undervalued on the previous run.
         """
         estimated = self.price_model.estimate(
             suburb=listing.suburb,
@@ -228,9 +235,43 @@ class Ingester:
         listing.undervalue_score = result.undervalue_score
         listing.valuation_classification = result.classification
 
+        self._hydrate_undervalued_state(listing.listing_id, existing)
         fired = self.undervaluation_detector.check(result, self.event_timeline)
         if fired:
             self.stats["events_generated"] += 1
+
+    def _hydrate_undervalued_state(self, listing_id: str, existing: Optional[Dict[str, Any]]) -> None:
+        """
+        Seed the detector's prior state for a listing from its persisted row.
+
+        The detector's state is in-memory only, so without this every new
+        process (CLI run, scheduled batch) would treat an already-undervalued
+        listing as a fresh crossing and persist a duplicate
+        ``UNDERVALUED_THRESHOLD_CROSSED`` event — ``_save_events()`` cannot
+        catch it because the new event carries a new timestamp.
+
+        Args:
+            listing_id: Listing identifier.
+            existing:   The listing's currently persisted row, if any.
+        """
+        if not existing:
+            return
+
+        prior_score = existing.get("undervalue_score")
+        if prior_score is None:
+            return
+
+        try:
+            prior_score = float(prior_score)
+        except (TypeError, ValueError):
+            log.warning(
+                "Ingester: ignoring non-numeric persisted undervalue_score %r for %s",
+                prior_score,
+                listing_id,
+            )
+            return
+
+        self.undervaluation_detector.hydrate_state(listing_id, prior_score)
 
     def _update_listing(self, new_listing: Listing, existing: Dict) -> None:
         """
