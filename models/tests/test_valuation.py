@@ -483,3 +483,48 @@ class TestUndervaluationDetector:
         event = timeline.get_latest_event("L1", EventType.UNDERVALUED_THRESHOLD_CROSSED)
         assert event is not None
         assert event.metadata["classification"] == ValuationClassification.SIGNIFICANTLY_UNDERVALUED.value
+
+    def test_hydrate_state_suppresses_event_for_already_undervalued(self) -> None:
+        """A fresh detector seeded with a prior undervalued score must not re-fire."""
+        detector = UndervaluationDetector(threshold_pct=10.0)
+        timeline = EventTimeline()
+        assert detector.hydrate_state("L1", 12.5) is True
+        assert detector.is_undervalued("L1") is True
+
+        result = self._make_result("L1", listed=700000, estimated=800000)
+        assert detector.check(result, timeline) is False
+        assert len(timeline.get_events_for_listing("L1")) == 0
+
+    def test_hydrate_state_below_threshold_still_fires_on_crossing(self) -> None:
+        """Prior score below the threshold: a crossing now is a real state change."""
+        detector = UndervaluationDetector(threshold_pct=10.0)
+        timeline = EventTimeline()
+        assert detector.hydrate_state("L1", 2.0) is True
+        assert detector.is_undervalued("L1") is False
+
+        result = self._make_result("L1", listed=700000, estimated=800000)
+        assert detector.check(result, timeline) is True
+
+    def test_hydrate_state_uses_detector_threshold(self) -> None:
+        """The persisted score is judged against this detector's threshold."""
+        detector = UndervaluationDetector(threshold_pct=20.0)
+        detector.hydrate_state("L1", 12.5)  # undervalued at 10 %, not at 20 %
+        assert detector.is_undervalued("L1") is False
+
+    def test_hydrate_state_none_score_is_noop(self) -> None:
+        detector = UndervaluationDetector(threshold_pct=10.0)
+        timeline = EventTimeline()
+        assert detector.hydrate_state("L1", None) is False
+
+        result = self._make_result("L1", listed=700000, estimated=800000)
+        assert detector.check(result, timeline) is True
+
+    def test_hydrate_state_does_not_overwrite_in_memory_state(self) -> None:
+        """In-memory state is newer than persisted state and must win."""
+        detector = UndervaluationDetector(threshold_pct=10.0)
+        timeline = EventTimeline()
+        fair = self._make_result("L1", listed=790000, estimated=800000)
+        detector.check(fair, timeline)
+
+        assert detector.hydrate_state("L1", 30.0) is False
+        assert detector.is_undervalued("L1") is False

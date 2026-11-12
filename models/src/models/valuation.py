@@ -310,11 +310,13 @@ class UndervaluationDetector:
     - If it moves from undervalued back to fair-value or overpriced, the
       state resets, allowing a future re-crossing to fire again.
 
-    The detector maintains an in-memory set of listing IDs that are currently
-    in an undervalued state.  This state is **not** persisted; each new
-    process starts with a clean slate.  For persistent deduplication, the
-    ``Ingester._save_events()`` timestamp-dedup mechanism in ``ingestion/``
-    provides a second layer of protection.
+    The detector maintains an in-memory map of listing IDs to their last known
+    undervalued state.  The detector itself does **not** persist this state;
+    each new process starts with a clean slate.  Callers that run across
+    process restarts (e.g. the ``Ingester`` in ``ingestion/``) must therefore
+    seed the prior state from their own storage via :meth:`hydrate_state`
+    before calling :meth:`check`, otherwise an already-undervalued listing
+    would look like a new crossing on the first check of every process.
 
     The threshold for triggering the event is configurable at construction
     time (default: 10 % — i.e. the ``UNDERVALUED`` band or higher).
@@ -383,6 +385,31 @@ class UndervaluationDetector:
             return True
 
         return False
+
+    def hydrate_state(self, listing_id: str, prior_undervalue_score: Optional[float]) -> bool:
+        """
+        Seed the prior state for a listing from a previously persisted score.
+
+        Lets a fresh process resume state-change detection where the previous
+        one left off.  The persisted score is compared against *this*
+        detector's threshold, so a threshold change between runs is honoured.
+
+        State already tracked in memory is never overwritten — it is newer
+        than anything persisted.  A ``None`` score means the listing has never
+        been scored (or its score was cleared) and leaves the state untouched.
+
+        Args:
+            listing_id:             Listing identifier.
+            prior_undervalue_score: Undervalue score (%) persisted by the
+                                    previous run, or ``None`` if there is none.
+
+        Returns:
+            ``True`` if state was seeded, ``False`` if it was left untouched.
+        """
+        if listing_id in self._undervalued_state or prior_undervalue_score is None:
+            return False
+        self._undervalued_state[listing_id] = prior_undervalue_score >= self._threshold
+        return True
 
     def reset(self, listing_id: str) -> None:
         """
