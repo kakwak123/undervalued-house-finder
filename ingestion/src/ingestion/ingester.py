@@ -380,21 +380,22 @@ class Ingester:
             listing_id: Listing identifier
         """
         events = self.event_timeline.get_events_for_listing(listing_id)
+        if not events:
+            return
+
+        # Fetch the listing's persisted events once (rather than one query per
+        # in-memory event) and index them by (event_type, timestamp).
+        existing_keys = {
+            (e.get("event_type"), e.get("timestamp"))
+            for e in self.repository.get_listing_events(listing_id)
+        }
 
         for event in events:
-            # Check if event already exists (idempotency)
-            existing_events = self.repository.get_listing_events(
-                listing_id, event.event_type
-            )
-
-            # Simple check: if event with same type and timestamp exists, skip
-            event_exists = any(
-                e.get("timestamp") == event.timestamp.isoformat()
-                for e in existing_events
-            )
-
-            if not event_exists:
+            # Idempotency: skip if an event with same type and timestamp exists
+            key = (event.event_type.value, event.timestamp.isoformat())
+            if key not in existing_keys:
                 self.repository.add_event(event)
+                existing_keys.add(key)
 
     def get_stats(self) -> dict:
         """
