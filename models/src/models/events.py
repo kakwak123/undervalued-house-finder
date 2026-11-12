@@ -38,6 +38,24 @@ class Event(BaseModel):
         return f"Event(type={self.event_type}, listing_id={self.listing_id}, timestamp={self.timestamp})"
 
 
+def _insert_sorted_desc(events: list[Event], event: Event) -> None:
+    """
+    Insert *event* into *events* (sorted by timestamp, most recent first).
+
+    The event is placed after any existing events with an equal timestamp,
+    matching the ordering a stable ``sort(key=timestamp, reverse=True)`` gives.
+    """
+    ts = event.timestamp
+    lo, hi = 0, len(events)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if events[mid].timestamp < ts:
+            hi = mid
+        else:
+            lo = mid + 1
+    events.insert(lo, event)
+
+
 class EventTimeline:
     """
     Timeline system for storing and querying events per listing.
@@ -83,19 +101,11 @@ class EventTimeline:
             metadata=metadata,
         )
 
-        # Add to events list
-        self._events.append(event)
-
-        # Add to listing-specific index
-        if listing_id not in self._events_by_listing:
-            self._events_by_listing[listing_id] = []
-        self._events_by_listing[listing_id].append(event)
-
-        # Sort events by timestamp (most recent first)
-        self._events.sort(key=lambda e: e.timestamp, reverse=True)
-        self._events_by_listing[listing_id].sort(
-            key=lambda e: e.timestamp, reverse=True
-        )
+        # Insert into both lists at the position that keeps them sorted by
+        # timestamp (most recent first).  A binary-search insert is O(log n)
+        # comparisons per event, versus re-sorting the whole list on every add.
+        _insert_sorted_desc(self._events, event)
+        _insert_sorted_desc(self._events_by_listing.setdefault(listing_id, []), event)
 
         return event
 
